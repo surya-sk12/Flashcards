@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Cards">
+<meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="manifest" href="manifest.json">
+<title>Cards</title>
+<style>
+  :root {
+    --bg: #f5f5f7; --surface: #ffffff; --text: #1d1d1f; --muted: #86868b;
+    --line: #e5e5ea; --accent: #0a84ff; --good: #30d158; --bad: #ff453a;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #000000; --surface: #1c1c1e; --text: #f5f5f7; --muted: #8e8e93; --line: #2c2c2e; }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 17px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    touch-action: manipulation; overscroll-behavior: none;
+  }
+  .screen { display: none; flex-direction: column; min-height: 100%; padding: 16px 20px 24px; }
+  .screen.active { display: flex; }
+  header { display: flex; align-items: center; justify-content: space-between; margin: 8px 0 20px; gap: 12px; }
+  h1 { font-size: 32px; font-weight: 700; margin: 0; letter-spacing: -0.5px; }
+  h2 { font-size: 22px; font-weight: 700; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  button { font: inherit; border: 0; background: none; color: var(--accent); padding: 8px 4px; cursor: pointer; }
+  .btn {
+    display: block; width: 100%; padding: 14px; border-radius: 12px;
+    background: var(--accent); color: #fff; font-weight: 600; text-align: center;
+  }
+  .btn.secondary { background: var(--surface); color: var(--accent); border: 1px solid var(--line); }
+  .btn:disabled { opacity: .4; }
+  .list { background: var(--surface); border-radius: 12px; overflow: hidden; }
+  .row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 14px 16px; border-bottom: 1px solid var(--line);
+  }
+  .row:last-child { border-bottom: 0; }
+  .row .main { flex: 1; min-width: 0; }
+  .row .title { font-weight: 500; }
+  .row .sub { color: var(--muted); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row.tap { cursor: pointer; }
+  .chev { color: var(--muted); }
+  .del { color: var(--bad); font-size: 15px; }
+  .empty { color: var(--muted); text-align: center; padding: 40px 16px; }
+  .stack { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+  label { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; margin: 16px 4px 6px; display: block; }
+  input, select, textarea {
+    font: inherit; width: 100%; padding: 12px 14px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--surface); color: var(--text);
+  }
+  textarea { min-height: 140px; resize: vertical; font-size: 15px; }
+  .note { color: var(--muted); font-size: 14px; margin: 8px 4px; }
+  .msg { margin-top: 12px; font-size: 15px; text-align: center; min-height: 1.4em; }
+
+  /* Study */
+  #study { padding-bottom: 32px; }
+  .progress { color: var(--muted); font-size: 15px; text-align: center; }
+  .arena { flex: 1; display: flex; align-items: center; justify-content: center; position: relative; margin: 16px 0; min-height: 360px; }
+  .card {
+    width: 100%; max-width: 480px; min-height: 340px; background: var(--surface);
+    border-radius: 20px; box-shadow: 0 8px 30px rgba(0,0,0,.08); border: 1px solid var(--line);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 28px 24px; text-align: center; user-select: none; -webkit-user-select: none;
+    touch-action: none; position: relative; will-change: transform;
+  }
+  .card .q { font-size: 24px; font-weight: 600; }
+  .card .a { font-size: 22px; color: var(--accent); margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--line); width: 100%; display: none; }
+  .card.revealed .a { display: block; }
+  .card .hint { position: absolute; bottom: 16px; color: var(--muted); font-size: 13px; }
+  .stamp {
+    position: absolute; top: 20px; font-weight: 800; font-size: 20px; padding: 4px 10px;
+    border: 3px solid; border-radius: 8px; opacity: 0; letter-spacing: 1px;
+  }
+  .stamp.yes { left: 20px; color: var(--good); transform: rotate(-12deg); }
+  .stamp.no { right: 20px; color: var(--bad); transform: rotate(12deg); }
+  .legend { display: flex; justify-content: space-between; color: var(--muted); font-size: 14px; }
+  .result { text-align: center; margin: auto 0; }
+  .result .big { font-size: 56px; font-weight: 700; }
+</style>
+</head>
+<body>
+
+<!-- Decks -->
+<section id="home" class="screen active">
+  <header><h1>Decks</h1><button id="toImport">Import</button></header>
+  <div id="deckList"></div>
+  <div class="stack">
+    <button class="btn secondary" id="newDeck">New deck</button>
+  </div>
+</section>
+
+<!-- Deck detail -->
+<section id="deck" class="screen">
+  <header><button id="deckBack">‹ Decks</button><button id="deckDelete" class="del">Delete deck</button></header>
+  <h2 id="deckTitle"></h2>
+  <p class="note" id="deckCount"></p>
+  <div class="stack">
+    <button class="btn" id="studyBtn">Study</button>
+    <button class="btn secondary" id="addCardBtn">Add card</button>
+  </div>
+  <label>Cards</label>
+  <div id="cardList"></div>
+</section>
+
+<!-- Add card -->
+<section id="add" class="screen">
+  <header><button id="addBack">‹ Back</button><h2>Add card</h2><span style="width:50px"></span></header>
+  <label for="addQ">Question</label>
+  <textarea id="addQ" style="min-height:90px"></textarea>
+  <label for="addA">Answer</label>
+  <textarea id="addA" style="min-height:70px"></textarea>
+  <div class="stack"><button class="btn" id="addSave">Save card</button></div>
+  <div class="msg" id="addMsg"></div>
+</section>
+
+<!-- Import -->
+<section id="import" class="screen">
+  <header><button id="importBack">‹ Decks</button><h2>Import</h2><span style="width:50px"></span></header>
+  <label for="importDeck">Into deck</label>
+  <select id="importDeck"></select>
+  <input id="importNewName" placeholder="New deck name" style="margin-top:8px; display:none">
+  <label>From a file</label>
+  <input type="file" id="importFile" accept=".txt,.csv,text/plain">
+  <label for="importText">Or paste</label>
+  <textarea id="importText" placeholder="What is the capital of India? | New Delhi"></textarea>
+  <p class="note">One card per line: <b>question | answer</b></p>
+  <div class="stack"><button class="btn" id="importGo">Import cards</button></div>
+  <div class="msg" id="importMsg"></div>
+</section>
+
+<!-- Study -->
+<section id="study" class="screen">
+  <header><button id="studyBack">‹ Done</button><span class="progress" id="progress"></span><span style="width:50px"></span></header>
+  <div class="arena" id="arena"></div>
+  <div class="legend" id="legend"><span>← Didn't know</span><span>Knew it →</span></div>
+</section>
+
+<script>
+(() => {
+  const KEY = 'flashcards.v1';
+  const $ = id => document.getElementById(id);
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+  // ---------- storage ----------
+  let data = { decks: [] }; // deck: {id, name, cards:[{id,q,a}]}
+  try { const raw = localStorage.getItem(KEY); if (raw) data = JSON.parse(raw); } catch (e) {}
+  if (!data || !Array.isArray(data.decks)) data = { decks: [] };
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(data)); }
+    catch (e) { alertMsg('Could not save — storage is full or blocked.'); }
+  }
+  function alertMsg(t) { console.warn(t); }
+  const deckById = id => data.decks.find(d => d.id === id);
+
+  // ---------- navigation ----------
+  let current = null; // current deck id
+  function show(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === id));
+    window.scrollTo(0, 0);
+  }
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  // ---------- home ----------
+  function renderHome() {
+    const el = $('deckList');
+    if (!data.decks.length) {
+      el.innerHTML = '<div class="list"><div class="empty">No decks yet.<br>Tap <b>Import</b> to load a file, or make a new deck.</div></div>';
+      return;
+    }
+    el.innerHTML = '<div class="list">' + data.decks.map(d =>
+      `<div class="row tap" data-id="${d.id}"><div class="main"><div class="title">${esc(d.name)}</div>
+       <div class="sub">${d.cards.length} card${d.cards.length === 1 ? '' : 's'}</div></div><span class="chev">›</span></div>`
+    ).join('') + '</div>';
+    el.querySelectorAll('.row').forEach(r => r.onclick = () => openDeck(r.dataset.id));
+  }
+  function createDeck(name) {
+    name = (name || '').trim();
+    if (!name) return null;
+    const existing = data.decks.find(d => d.name.toLowerCase() === name.toLowerCase());
+    if (existing) return existing;
+    const d = { id: uid(), name, cards: [] };
+    data.decks.push(d); save();
+    return d;
+  }
+  $('newDeck').onclick = () => {
+    const name = prompt('Deck name (e.g. Indian History)');
+    const d = createDeck(name);
+    if (d) { renderHome(); openDeck(d.id); }
+  };
+  $('toImport').onclick = () => openImport();
+
+  // ---------- deck ----------
+  function openDeck(id) {
+    current = id; renderDeck(); show('deck');
+  }
+  function renderDeck() {
+    const d = deckById(current); if (!d) return goHome();
+    $('deckTitle').textContent = d.name;
+    $('deckCount').textContent = `${d.cards.length} card${d.cards.length === 1 ? '' : 's'}`;
+    $('studyBtn').disabled = d.cards.length === 0;
+    const el = $('cardList');
+    if (!d.cards.length) { el.innerHTML = '<div class="list"><div class="empty">No cards in this deck.</div></div>'; return; }
+    el.innerHTML = '<div class="list">' + d.cards.map(c =>
+      `<div class="row"><div class="main"><div class="title">${esc(c.q)}</div><div class="sub">${esc(c.a)}</div></div>
+       <button class="del" data-id="${c.id}">Delete</button></div>`
+    ).join('') + '</div>';
+    el.querySelectorAll('.del').forEach(b => b.onclick = () => {
+      d.cards = d.cards.filter(c => c.id !== b.dataset.id); save(); renderDeck();
+    });
+  }
+  function goHome() { current = null; renderHome(); show('home'); }
+  $('deckBack').onclick = goHome;
+  $('deckDelete').onclick = () => {
+    const d = deckById(current);
+    if (d && confirm(`Delete "${d.name}" and all ${d.cards.length} cards?`)) {
+      data.decks = data.decks.filter(x => x.id !== current); save(); goHome();
+    }
+  };
+  $('addCardBtn').onclick = () => { $('addQ').value = ''; $('addA').value = ''; $('addMsg').textContent = ''; show('add'); };
+  $('studyBtn').onclick = () => startStudy(deckById(current).cards);
+
+  // ---------- add card ----------
+  $('addBack').onclick = () => { renderDeck(); show('deck'); };
+  $('addSave').onclick = () => {
+    const q = $('addQ').value.trim(), a = $('addA').value.trim();
+    if (!q || !a) { $('addMsg').textContent = 'Fill in both fields.'; return; }
+    deckById(current).cards.push({ id: uid(), q, a }); save();
+    $('addQ').value = ''; $('addA').value = '';
+    $('addMsg').textContent = 'Saved. Add another, or go back.';
+    $('addQ').focus();
+  };
+
+  // ---------- import ----------
+  const NEW = '__new__';
+  let fileText = '', fileName = '';
+  function openImport() {
+    const sel = $('importDeck');
+    sel.innerHTML = data.decks.map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('') +
+      `<option value="${NEW}">+ New deck…</option>`;
+    if (current && deckById(current)) sel.value = current;
+    else if (!data.decks.length) sel.value = NEW;
+    syncNewName();
+    $('importFile').value = ''; $('importText').value = ''; $('importMsg').textContent = '';
+    fileText = ''; fileName = '';
+    show('import');
+  }
+  function syncNewName() { $('importNewName').style.display = $('importDeck').value === NEW ? 'block' : 'none'; }
+  $('importDeck').onchange = syncNewName;
+  $('importBack').onclick = goHome;
+  $('importFile').onchange = e => {
+    const f = e.target.files[0]; if (!f) return;
+    fileName = f.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim();
+    const r = new FileReader();
+    r.onload = () => {
+      fileText = String(r.result);
+      if ($('importDeck').value === NEW && !$('importNewName').value) $('importNewName').value = fileName;
+      const n = parseCards(fileText).cards.length;
+      $('importMsg').textContent = `${n} card${n === 1 ? '' : 's'} found in ${f.name}.`;
+    };
+    r.readAsText(f);
+  };
+
+  // "question | answer" per line. Splits on the FIRST "|", so answers may contain "|".
+  function parseCards(text) {
+    const cards = []; let skipped = 0;
+    text.replace(/^﻿/, '').split(/\r?\n/).forEach(line => {
+      if (!line.trim()) return;
+      const i = line.indexOf('|');
+      if (i < 0) { skipped++; return; }
+      const q = line.slice(0, i).trim(), a = line.slice(i + 1).trim();
+      if (!q || !a) { skipped++; return; }
+      cards.push({ q, a });
+    });
+    return { cards, skipped };
+  }
+
+  $('importGo').onclick = () => {
+    const text = [fileText, $('importText').value].filter(Boolean).join('\n');
+    const { cards, skipped } = parseCards(text);
+    if (!cards.length) { $('importMsg').textContent = 'No cards found. Use one "question | answer" per line.'; return; }
+    let deck;
+    if ($('importDeck').value === NEW) {
+      deck = createDeck($('importNewName').value || fileName);
+      if (!deck) { $('importMsg').textContent = 'Give the new deck a name.'; return; }
+    } else deck = deckById($('importDeck').value);
+    const seen = new Set(deck.cards.map(c => c.q.toLowerCase()));
+    let added = 0, dupes = 0;
+    cards.forEach(c => {
+      if (seen.has(c.q.toLowerCase())) { dupes++; return; }
+      seen.add(c.q.toLowerCase()); deck.cards.push({ id: uid(), ...c }); added++;
+    });
+    save();
+    let m = `Added ${added} card${added === 1 ? '' : 's'} to ${deck.name}.`;
+    if (dupes) m += ` Skipped ${dupes} duplicate${dupes === 1 ? '' : 's'}.`;
+    if (skipped) m += ` ${skipped} line${skipped === 1 ? '' : 's'} had no "|" and were skipped.`;
+    $('importMsg').textContent = m;
+    fileText = ''; $('importFile').value = ''; $('importText').value = '';
+    current = deck.id;
+    openImport(); $('importMsg').textContent = m;
+  };
+
+  // ---------- study ----------
+  let queue = [], idx = 0, missed = [], knew = 0, roundTotal = 0;
+  function shuffle(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+  function startStudy(cards) {
+    queue = shuffle(cards); idx = 0; missed = []; knew = 0; roundTotal = queue.length;
+    show('study'); renderCard();
+  }
+  $('studyBack').onclick = () => { renderDeck(); show('deck'); };
+
+  function renderCard() {
+    const arena = $('arena');
+    if (idx >= queue.length) return renderResult();
+    $('legend').style.visibility = 'visible';
+    $('progress').textContent = `${idx + 1} / ${roundTotal}`;
+    const c = queue[idx];
+    arena.innerHTML = `<div class="card" id="card">
+      <span class="stamp yes">KNEW</span><span class="stamp no">NOPE</span>
+      <div class="q">${esc(c.q)}</div><div class="a">${esc(c.a)}</div>
+      <div class="hint" id="hint">Double-tap to reveal</div></div>`;
+    bindCard($('card'));
+  }
+
+  function renderResult() {
+    $('progress').textContent = '';
+    $('legend').style.visibility = 'hidden';
+    const arena = $('arena');
+    arena.innerHTML = `<div class="result">
+      <div class="big">${knew}/${roundTotal}</div>
+      <p class="note">${missed.length ? `${missed.length} to go over again.` : 'You knew every card.'}</p>
+      <div class="stack" style="min-width:260px">
+        ${missed.length ? '<button class="btn" id="retry">Study missed cards</button>' : ''}
+        <button class="btn secondary" id="again">Restart whole deck</button>
+        <button class="btn secondary" id="finish">Done</button>
+      </div></div>`;
+    if (missed.length) $('retry').onclick = () => startStudy(missed);
+    $('again').onclick = () => startStudy(deckById(current).cards);
+    $('finish').onclick = () => { renderDeck(); show('deck'); };
+  }
+
+  function mark(knewIt) {
+    if (knewIt) knew++; else missed.push(queue[idx]);
+    idx++; renderCard();
+  }
+
+  function bindCard(card) {
+    let startX = 0, startY = 0, dx = 0, dragging = false, lastTap = 0, moved = false;
+    const yes = card.querySelector('.stamp.yes'), no = card.querySelector('.stamp.no');
+    const THRESH = 90;
+
+    function reveal() {
+      if (card.classList.contains('revealed')) return;
+      card.classList.add('revealed');
+      $('hint').textContent = 'Swipe → knew it   ·   ← didn\'t';
+    }
+    card.addEventListener('pointerdown', e => {
+      startX = e.clientX; startY = e.clientY; dx = 0; moved = false; dragging = true;
+      card.style.transition = 'none';
+      card.setPointerCapture(e.pointerId);
+    });
+    card.addEventListener('pointermove', e => {
+      if (!dragging) return;
+      dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) moved = true;
+      if (!card.classList.contains('revealed')) return; // must reveal before marking
+      card.style.transform = `translateX(${dx}px) rotate(${dx / 20}deg)`;
+      yes.style.opacity = Math.max(0, Math.min(1, dx / THRESH));
+      no.style.opacity = Math.max(0, Math.min(1, -dx / THRESH));
+    });
+    const end = () => {
+      if (!dragging) return;
+      dragging = false;
+      if (!moved) { // a tap
+        const now = Date.now();
+        if (now - lastTap < 320) { reveal(); lastTap = 0; } else lastTap = now;
+        return;
+      }
+      if (card.classList.contains('revealed') && Math.abs(dx) > THRESH) {
+        const dir = dx > 0 ? 1 : -1;
+        card.style.transition = 'transform .22s ease-out, opacity .22s';
+        card.style.transform = `translateX(${dir * window.innerWidth}px) rotate(${dir * 20}deg)`;
+        card.style.opacity = '0';
+        setTimeout(() => mark(dir > 0), 200);
+      } else {
+        card.style.transition = 'transform .2s ease-out';
+        card.style.transform = '';
+        yes.style.opacity = 0; no.style.opacity = 0;
+        if (!card.classList.contains('revealed') && Math.abs(dx) > THRESH) {
+          $('hint').textContent = 'Double-tap to see the answer first';
+        }
+      }
+    };
+    card.addEventListener('pointerup', end);
+    card.addEventListener('pointercancel', end);
+    card.addEventListener('dblclick', e => { e.preventDefault(); reveal(); }); // desktop fallback
+  }
+
+  renderHome();
+})();
+</script>
+</body>
+</html>
