@@ -86,6 +86,25 @@
   .stamp.yes { left: 20px; color: var(--good); transform: rotate(-12deg); }
   .stamp.no { right: 20px; color: var(--bad); transform: rotate(12deg); }
   .legend { display: flex; justify-content: space-between; color: var(--muted); font-size: 14px; }
+  .navrow { display: flex; gap: 10px; margin-bottom: 12px; }
+  .navrow .btn { flex: 1; padding: 12px; }
+  .score { display: flex; gap: 14px; justify-content: center; font-weight: 700; font-size: 17px; font-variant-numeric: tabular-nums; }
+  .score .r { color: var(--good); } .score .w { color: var(--bad); } .score .left { color: var(--muted); font-weight: 500; }
+  .score span { display: inline-block; }
+  .pop { animation: pop .35s ease-out; }
+  @keyframes pop { 0% { transform: scale(1); } 40% { transform: scale(1.45); } 100% { transform: scale(1); } }
+  .badge { position: absolute; top: 16px; font-size: 13px; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
+  .badge.right { color: var(--good); border: 1.5px solid var(--good); }
+  .badge.wrong { color: var(--bad); border: 1.5px solid var(--bad); }
+  .badge.skip { color: var(--muted); border: 1.5px solid var(--muted); }
+  /* neon edge glow */
+  .glow { position: fixed; left: 0; right: 0; height: 160px; pointer-events: none; opacity: 0; z-index: 50; }
+  .glow.top { top: 0; background: linear-gradient(to bottom, rgba(57,255,20,.75), rgba(57,255,20,.25) 25%, transparent);
+    box-shadow: inset 0 6px 0 #39ff14, 0 0 40px #39ff14; }
+  .glow.bottom { bottom: 0; background: linear-gradient(to top, rgba(255,23,68,.75), rgba(255,23,68,.25) 25%, transparent);
+    box-shadow: inset 0 -6px 0 #ff1744, 0 0 40px #ff1744; }
+  .glow.on { animation: neon .75s ease-out; }
+  @keyframes neon { 0% { opacity: 0; } 12% { opacity: 1; } 25% { opacity: .55; } 38% { opacity: 1; } 100% { opacity: 0; } }
   .result { text-align: center; margin: auto 0; }
   .result .big { font-size: 56px; font-weight: 700; }
 </style>
@@ -142,10 +161,17 @@
 
 <!-- Study -->
 <section id="study" class="screen">
-  <header><button id="studyBack">‹ Done</button><span class="progress" id="progress"></span><span style="width:50px"></span></header>
+  <header><button id="studyBack">‹ Done</button><div class="score" id="score"></div><span style="width:50px"></span></header>
+  <div class="progress" id="progress"></div>
   <div class="arena" id="arena"></div>
-  <div class="legend" id="legend"><span>← Didn't know</span><span>Knew it →</span></div>
+  <div class="navrow" id="navrow">
+    <button class="btn secondary" id="prevBtn">‹ Prev</button>
+    <button class="btn secondary" id="skipBtn">Skip ›</button>
+  </div>
+  <div class="legend" id="legend"><span>↑ Knew it</span><span>↓ Didn't</span><span>← Skip · Prev →</span></div>
 </section>
+<div class="glow top" id="glowTop"></div>
+<div class="glow bottom" id="glowBottom"></div>
 
 <script>
 (() => {
@@ -312,102 +338,151 @@
   };
 
   // ---------- study ----------
-  let queue = [], idx = 0, missed = [], knew = 0, roundTotal = 0;
+  // pending: cards still to answer (front = current). history: cards already marked or skipped, in order.
+  // view: null = on the live card; a number = reviewing history[view] (read-only).
+  let pending = [], history = [], view = null, right = 0, wrong = 0, missed = [], total = 0;
   function shuffle(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
   function startStudy(cards) {
-    queue = shuffle(cards); idx = 0; missed = []; knew = 0; roundTotal = queue.length;
+    pending = shuffle(cards); history = []; view = null; right = 0; wrong = 0; missed = []; total = pending.length;
     show('study'); renderCard();
   }
   $('studyBack').onclick = () => { renderDeck(); show('deck'); };
 
+  function renderScore(popWhich) {
+    $('score').innerHTML = `<span class="r" id="sr">✓ ${right}</span><span class="w" id="sw">✗ ${wrong}</span>`;
+    if (popWhich) $(popWhich).classList.add('pop');
+  }
+  function flash(id) {
+    const g = $(id); g.classList.remove('on'); void g.offsetWidth; g.classList.add('on');
+  }
+
   function renderCard() {
     const arena = $('arena');
-    if (idx >= queue.length) return renderResult();
-    $('legend').style.visibility = 'visible';
-    $('progress').textContent = `${idx + 1} / ${roundTotal}`;
-    const c = queue[idx];
-    arena.innerHTML = `<div class="card" id="card">
-      <span class="stamp yes">KNEW</span><span class="stamp no">NOPE</span>
+    if (view === null && !pending.length) return renderResult();
+    if (!$('score').innerHTML) renderScore();
+    $('navrow').style.display = 'flex'; $('legend').style.visibility = 'visible';
+    $('prevBtn').disabled = view === 0 || (view === null && !history.length);
+
+    let c, badge = '', revealed = false, hint;
+    if (view === null) {
+      c = pending[0];
+      $('progress').textContent = `${pending.length} left`;
+      $('skipBtn').textContent = 'Skip ›';
+      $('skipBtn').disabled = pending.length < 2;
+      hint = 'Double-tap to reveal';
+    } else {
+      const h = history[view]; c = h.card; revealed = true;
+      $('progress').textContent = `Reviewing ${view + 1} of ${history.length}`;
+      $('skipBtn').textContent = 'Next ›'; $('skipBtn').disabled = false;
+      badge = h.result === 'right' ? '<span class="badge right">✓ Knew it</span>'
+            : h.result === 'wrong' ? '<span class="badge wrong">✗ Didn\'t</span>'
+            : '<span class="badge skip">Skipped – coming back later</span>';
+      hint = 'Review only · ← for next';
+    }
+    arena.innerHTML = `<div class="card${revealed ? ' revealed' : ''}" id="card">${badge}
       <div class="q">${esc(c.q)}</div><div class="a">${esc(c.a)}</div>
-      <div class="hint" id="hint">Double-tap to reveal</div></div>`;
+      <div class="hint" id="hint">${hint}</div></div>`;
     bindCard($('card'));
   }
 
   function renderResult() {
     $('progress').textContent = '';
-    $('legend').style.visibility = 'hidden';
-    const arena = $('arena');
-    arena.innerHTML = `<div class="result">
-      <div class="big">${knew}/${roundTotal}</div>
+    $('navrow').style.display = 'none'; $('legend').style.visibility = 'hidden';
+    $('arena').innerHTML = `<div class="result">
+      <div class="big">${right}/${total}</div>
       <p class="note">${missed.length ? `${missed.length} to go over again.` : 'You knew every card.'}</p>
       <div class="stack" style="min-width:260px">
         ${missed.length ? '<button class="btn" id="retry">Study missed cards</button>' : ''}
         <button class="btn secondary" id="again">Restart whole deck</button>
         <button class="btn secondary" id="finish">Done</button>
       </div></div>`;
-    if (missed.length) $('retry').onclick = () => startStudy(missed);
-    $('again').onclick = () => startStudy(deckById(current).cards);
+    if (missed.length) $('retry').onclick = () => { $('score').innerHTML = ''; startStudy(missed); };
+    $('again').onclick = () => { $('score').innerHTML = ''; startStudy(deckById(current).cards); };
     $('finish').onclick = () => { renderDeck(); show('deck'); };
   }
 
+  // ---- actions ----
   function mark(knewIt) {
-    if (knewIt) knew++; else missed.push(queue[idx]);
-    idx++; renderCard();
+    const card = pending.shift();
+    history.push({ card, result: knewIt ? 'right' : 'wrong' });
+    if (knewIt) { right++; flash('glowTop'); renderScore('sr'); }
+    else { wrong++; missed.push(card); flash('glowBottom'); renderScore('sw'); }
+    renderCard();
   }
+  function goNext() { // swipe left / Skip / Next
+    if (view !== null) { view = view + 1 >= history.length ? null : view + 1; return renderCard(); }
+    if (pending.length < 2) return false;
+    const card = pending.shift();
+    pending.push(card);                       // comes back at the end
+    history.push({ card, result: 'skip' });
+    renderCard();
+  }
+  function goPrev() { // swipe right / Prev
+    if (view === null) { if (!history.length) return false; view = history.length - 1; }
+    else if (view > 0) view--;
+    else return false;
+    renderCard();
+  }
+  $('prevBtn').onclick = () => goPrev();
+  $('skipBtn').onclick = () => goNext();
 
   function bindCard(card) {
-    let startX = 0, startY = 0, dx = 0, dragging = false, lastTap = 0, moved = false;
-    const yes = card.querySelector('.stamp.yes'), no = card.querySelector('.stamp.no');
-    const THRESH = 90;
-
+    let sx = 0, sy = 0, dx = 0, dy = 0, axis = null, dragging = false, lastTap = 0;
+    const T = 80;
+    const live = view === null;
+    const isRevealed = () => card.classList.contains('revealed');
     function reveal() {
-      if (card.classList.contains('revealed')) return;
+      if (isRevealed()) return;
       card.classList.add('revealed');
-      $('hint').textContent = 'Swipe → knew it   ·   ← didn\'t';
+      $('hint').textContent = '↑ knew it   ·   ↓ didn\'t';
+    }
+    function snapBack(msg) {
+      card.style.transition = 'transform .2s ease-out'; card.style.transform = '';
+      if (msg) $('hint').textContent = msg;
+    }
+    function flyOff(x, y, done) {
+      card.style.transition = 'transform .22s ease-out, opacity .22s';
+      card.style.transform = `translate(${x}px, ${y}px)`; card.style.opacity = '0';
+      setTimeout(done, 200);
     }
     card.addEventListener('pointerdown', e => {
-      startX = e.clientX; startY = e.clientY; dx = 0; moved = false; dragging = true;
-      card.style.transition = 'none';
-      card.setPointerCapture(e.pointerId);
+      sx = e.clientX; sy = e.clientY; dx = dy = 0; axis = null; dragging = true;
+      card.style.transition = 'none'; card.setPointerCapture(e.pointerId);
     });
     card.addEventListener('pointermove', e => {
       if (!dragging) return;
-      dx = e.clientX - startX;
-      const dy = e.clientY - startY;
-      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) moved = true;
-      if (!card.classList.contains('revealed')) return; // must reveal before marking
-      card.style.transform = `translateX(${dx}px) rotate(${dx / 20}deg)`;
-      yes.style.opacity = Math.max(0, Math.min(1, dx / THRESH));
-      no.style.opacity = Math.max(0, Math.min(1, -dx / THRESH));
+      dx = e.clientX - sx; dy = e.clientY - sy;
+      if (!axis && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+      if (axis === 'x') card.style.transform = `translateX(${dx}px) rotate(${dx / 25}deg)`;
+      if (axis === 'y' && live && isRevealed()) card.style.transform = `translateY(${dy}px)`;
     });
     const end = () => {
-      if (!dragging) return;
-      dragging = false;
-      if (!moved) { // a tap
+      if (!dragging) return; dragging = false;
+      if (!axis) { // tap
         const now = Date.now();
         if (now - lastTap < 320) { reveal(); lastTap = 0; } else lastTap = now;
         return;
       }
-      if (card.classList.contains('revealed') && Math.abs(dx) > THRESH) {
-        const dir = dx > 0 ? 1 : -1;
-        card.style.transition = 'transform .22s ease-out, opacity .22s';
-        card.style.transform = `translateX(${dir * window.innerWidth}px) rotate(${dir * 20}deg)`;
-        card.style.opacity = '0';
-        setTimeout(() => mark(dir > 0), 200);
-      } else {
-        card.style.transition = 'transform .2s ease-out';
-        card.style.transform = '';
-        yes.style.opacity = 0; no.style.opacity = 0;
-        if (!card.classList.contains('revealed') && Math.abs(dx) > THRESH) {
-          $('hint').textContent = 'Double-tap to see the answer first';
-        }
+      if (axis === 'y') {
+        if (Math.abs(dy) < T) return snapBack();
+        if (!live) return snapBack('Review only · ← for next');
+        if (!isRevealed()) return snapBack('Double-tap to see the answer first');
+        const up = dy < 0;
+        return flyOff(0, up ? -window.innerHeight : window.innerHeight, () => mark(up));
       }
+      // axis x
+      if (Math.abs(dx) < T) return snapBack();
+      if (dx < 0) { // left = next / skip
+        if (live && pending.length < 2) return snapBack('Last card – nothing to skip to');
+        return flyOff(-window.innerWidth, 0, goNext);
+      }
+      if (view === 0 || (live && !history.length)) return snapBack('This is the first card');
+      return flyOff(window.innerWidth, 0, goPrev);
     };
     card.addEventListener('pointerup', end);
     card.addEventListener('pointercancel', end);
-    card.addEventListener('dblclick', e => { e.preventDefault(); reveal(); }); // desktop fallback
+    card.addEventListener('dblclick', e => { e.preventDefault(); reveal(); });
   }
-
   renderHome();
 })();
 </script>
