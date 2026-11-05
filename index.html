@@ -104,7 +104,7 @@
   .glow.bottom { bottom: 0; background: linear-gradient(to top, rgba(255,23,68,.75), rgba(255,23,68,.25) 25%, transparent);
     box-shadow: inset 0 -6px 0 #ff1744, 0 0 40px #ff1744; }
   .glow.on { animation: neon .75s ease-out; }
-  @keyframes neon { 0% { opacity: 0; } 12% { opacity: 1; } 25% { opacity: .55; } 38% { opacity: 1; } 100% { opacity: 0; } }
+  @keyframes neon { 0% { opacity: 1; } 15% { opacity: .5; } 30% { opacity: 1; } 100% { opacity: 0; } }
   .result { text-align: center; margin: auto 0; }
   .result .big { font-size: 56px; font-weight: 700; }
 </style>
@@ -353,7 +353,18 @@
     if (popWhich) $(popWhich).classList.add('pop');
   }
   function flash(id) {
-    const g = $(id); g.classList.remove('on'); void g.offsetWidth; g.classList.add('on');
+    const g = $(id); g.style.transition = 'none'; g.style.opacity = '';
+    g.classList.remove('on'); void g.offsetWidth; g.classList.add('on');
+  }
+  // glow follows the drag: 0 at rest, full at the point where releasing would count
+  function dragGlow(dy, T) {
+    const t = Math.min(1, Math.abs(dy) / T);
+    ['glowTop', 'glowBottom'].forEach(id => { const g = $(id); g.classList.remove('on'); g.style.transition = 'none'; });
+    $('glowTop').style.opacity = dy < 0 ? t : 0;
+    $('glowBottom').style.opacity = dy > 0 ? t : 0;
+  }
+  function clearGlow() {
+    ['glowTop', 'glowBottom'].forEach(id => { const g = $(id); g.style.transition = 'opacity .25s ease-out'; g.style.opacity = 0; });
   }
 
   function renderCard() {
@@ -454,7 +465,7 @@
       dx = e.clientX - sx; dy = e.clientY - sy;
       if (!axis && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
       if (axis === 'x') card.style.transform = `translateX(${dx}px) rotate(${dx / 25}deg)`;
-      if (axis === 'y' && live && isRevealed()) card.style.transform = `translateY(${dy}px)`;
+      if (axis === 'y' && live && isRevealed()) { card.style.transform = `translateY(${dy}px)`; dragGlow(dy, T); }
     });
     const end = () => {
       if (!dragging) return; dragging = false;
@@ -464,7 +475,7 @@
         return;
       }
       if (axis === 'y') {
-        if (Math.abs(dy) < T) return snapBack();
+        if (Math.abs(dy) < T) { clearGlow(); return snapBack(); }
         if (!live) return snapBack('Review only · ← for next');
         if (!isRevealed()) return snapBack('Double-tap to see the answer first');
         const up = dy < 0;
@@ -480,7 +491,7 @@
       return flyOff(window.innerWidth, 0, goPrev);
     };
     card.addEventListener('pointerup', end);
-    card.addEventListener('pointercancel', end);
+    card.addEventListener('pointercancel', () => { clearGlow(); end(); });
     card.addEventListener('dblclick', e => { e.preventDefault(); reveal(); });
   }
   renderHome();
